@@ -1,13 +1,341 @@
 {
-    "atomType": "Molecule",
-    "x": 0,
-    "y": 0,
-    "uniqueID": "id-62430",
-    "name": "util.TrimWithFace",
-    "topLevel": true,
-    "allAtoms": [],
-    "allConnectors": [],
-    "unitsKey": "Unitless",
-    "fileTypeVersion": 1,
-    "filetypeVersion": 1
+  "atomType": "Molecule",
+  "x": 0,
+  "y": 0,
+  "uniqueID": "id-62430",
+  "name": "util.TrimWithFace",
+  "topLevel": true,
+  "allAtoms": [
+    {
+      "atomType": "Output",
+      "x": 0.98,
+      "y": 0.5,
+      "uniqueID": "id-62431",
+      "ioValues": [
+        {
+          "name": "number or geometry",
+          "ioValue": "__GEOMETRY_INPUT__"
+        }
+      ]
+    },
+    {
+      "atomType": "Code",
+      "x": 0.4586588541666667,
+      "y": 0.5899864682002706,
+      "uniqueID": "id-62433",
+      "ioValues": [
+        {
+          "name": "width",
+          "ioValue": 40
+        },
+        {
+          "name": "depth",
+          "ioValue": 30
+        },
+        {
+          "name": "thickness",
+          "ioValue": 5
+        },
+        {
+          "name": "holeRadius",
+          "ioValue": 6
+        },
+        {
+          "name": "color",
+          "ioValue": "#5B9BD5",
+          "currentEquation": "#5B9BD5"
+        },
+        {
+          "name": "addFillet",
+          "ioValue": true
+        },
+        {
+          "name": "extra",
+          "ioValue": "__GEOMETRY_INPUT__"
+        }
+      ],
+      "interpreterVersion": 1,
+      "code": "\n/**\n * =========================================================================\n *  ABUNDANCE CODE ATOM — Quick Reference\n * =========================================================================\n *\n *  HOW INPUTS WORK\n *  ---------------\n *  Every parameter of run() becomes an input port on this atom.\n *  Four types are supported:\n *\n *    number   -> numeric input / slider\n *    string   -> text input  (great for hex color codes, labels, etc.)\n *    boolean  -> true/false toggle\n *    Assembly -> geometry -- wire this to the output of another atom\n *\n *  Give a parameter a default value ( = x ) to make it optional.\n *  Mark it with ? (name?: Assembly) to make it optional with no default.\n *  Parameters without a default must be connected before the atom runs.\n *\n *  RETURN VALUE\n *  ------------\n *  Return an Assembly, an Assembly[], or a primitive (number/string/boolean).\n *  Returning an Assembly[] lets downstream atoms (BOM, cut layout...)\n *  see each piece independently.\n *\n *  GEOMETRY API  (replicad is available as a global)\n *  -------------------------------------------------\n *  Create 2-D sketches\n *    replicad.drawCircle(radius)\n *    replicad.drawRectangle(width, height)\n *    replicad.drawRoundedRectangle(width, height, cornerRadius)\n *\n *  Turn a 2-D sketch into a 3-D solid\n *    sketch.sketchOnPlane().extrude(distance)\n *    sketch.sketchOnPlane().revolve()          // rotate 360 deg around Z\n *\n *  Create 3-D primitives directly\n *    replicad.makeBaseBox(width, depth, height)\n *    replicad.makeSphere(radius)\n *    replicad.makeCylinder(radius, height)\n *\n *  Boolean operations\n *    solidA.fuse(solidB)                       // union\n *    solidA.cut(solidB)                        // difference (cut a hole)\n *    solidA.intersect(solidB)                  // intersection\n *\n *  Post-processing\n *    solid.fillet(radius)                      // round ALL edges\n *    solid.fillet(r, e => e.inPlane(\"XY\", z))  // round only top-face edges\n *    solid.chamfer(distance)                   // bevel ALL edges\n *    solid.translate(x, y, z)                  // move the solid\n *    solid.rotate(angle, [0, 0, 1])            // rotate around Z axis\n *\n *  ASSEMBLY CLASS\n *  --------------\n *  Wrap any replicad solid in an Assembly to attach display metadata:\n *    new Assembly({ geometry, color, tags, bom })\n *      geometry -> replicad solid / drawing returned by the API above\n *      color    -> hex string shown in the 3-D viewport  (\"#A3CE5B\")\n *      tags     -> string[] used for filtering in cut layout / BOM\n *      bom      -> string[] lines added to the Bill of Materials panel\n *\n *  AI PROMPT TIP\n *  -------------\n *  Copy the code in this editor into ChatGPT / Claude and say something like:\n *    \"Modify this Abundance Code Atom to create a gear with 12 teeth\"\n *    \"Change this to make a hexagonal nut instead of a round plate\"\n *  The comments above give the AI all the context it needs to produce\n *  valid, working Abundance TypeScript code.\n * =========================================================================\n */\n\n/**\n * A rectangular mounting plate with a circular hole in the centre.\n * All parameters have defaults so the atom produces geometry immediately\n * after creation — no connections required to get started.\n */\nfunction run(\n  width: number = 40,        \n  depth: number = 30,       \n  thickness: number = 5,    \n  holeRadius: number = 6,   \n  color: string = \"#5B9BD5\", \n  addFillet: boolean = true, \n  extra?: Assembly           \n) {\n  // ── Step 1: Create the base solid ────────────────────────────────────────\n  // makeBaseBox(width, depth, height) places a box with one corner at the\n  // origin.  Translate it so the hole will be centred at (0, 0).\n  let plate = replicad\n    .makeBaseBox(width, depth, thickness)\n    .translate(-width / 2, -depth / 2, 0);\n\n  // ── Step 2: Cut a through-hole in the centre ──────────────────────────────\n  // Extrude a circle slightly taller than the plate so the cut goes all the\n  // way through.  Start 1 mm below the bottom face to avoid coplanar issues.\n  const holeCutter = replicad\n    .drawCircle(holeRadius)\n    .sketchOnPlane()\n    .extrude(thickness + 2)\n    .translate(0, 0, -1);\n\n  plate = plate.cut(holeCutter);\n\n  // ── Step 3: Optional fillet on the top-face edges ────────────────────────\n  // inPlane(\"XY\", thickness) selects only the edges that lie in the\n  // horizontal plane at z = thickness (i.e. the top face of the plate).\n  if (addFillet) {\n    plate = plate.fillet(1.5, (e) => e.inPlane(\"XY\", thickness));\n  }\n\n  // ── Step 4: Wrap in an Assembly to set display properties ─────────────────\n  const plateAssembly = new Assembly({\n    geometry: plate,\n    color: color,\n    tags: [\"plate\", \"mounting-plate\"],\n    bom: [`Mounting plate ${width}×${depth}×${thickness} mm`],\n  });\n\n  // ── Step 5: Combine with any upstream geometry ────────────────────────────\n  // Returning an array lets each piece stay independent for the BOM and\n  // cut-layout atoms.  If nothing is connected, `extra` is undefined.\n  const results: Assembly[] = [plateAssembly];\n  if (extra) results.push(extra);\n  return results;\n}\n"
+    },
+    {
+      "atomType": "Rectangle",
+      "x": 0.17513020833333334,
+      "y": 0.3572395128552097,
+      "uniqueID": "id-62442",
+      "ioValues": [
+        {
+          "name": "x length",
+          "ioValue": 10
+        },
+        {
+          "name": "y length",
+          "ioValue": 10
+        }
+      ]
+    },
+    {
+      "atomType": "Extrude",
+      "x": 0.2936197916666667,
+      "y": 0.20297699594046006,
+      "uniqueID": "id-62446",
+      "ioValues": [
+        {
+          "name": "geometry",
+          "ioValue": "__GEOMETRY_INPUT__"
+        },
+        {
+          "name": "height",
+          "ioValue": 10
+        }
+      ]
+    },
+    {
+      "atomType": "Move",
+      "x": 0.2991536458333333,
+      "y": 0.4343707713125846,
+      "uniqueID": "id-62450",
+      "ioValues": [
+        {
+          "name": "geometry",
+          "ioValue": "__GEOMETRY_INPUT__"
+        },
+        {
+          "name": "xDist",
+          "ioValue": 5
+        },
+        {
+          "name": "yDist",
+          "ioValue": -2
+        },
+        {
+          "name": "zDist",
+          "ioValue": -2
+        }
+      ]
+    },
+    {
+      "atomType": "Assembly",
+      "x": 0.40755208333333337,
+      "y": 0.3910690121786198,
+      "uniqueID": "id-62456",
+      "ioValues": [
+        {
+          "name": "Shape 1",
+          "ioValue": null
+        },
+        {
+          "name": "Shape 2",
+          "ioValue": null
+        }
+      ]
+    },
+    {
+      "atomType": "Circle",
+      "x": 0.11555989583333334,
+      "y": 0.7415426251691475,
+      "uniqueID": "id-62461",
+      "ioValues": [
+        {
+          "name": "diameter",
+          "ioValue": 50,
+          "currentEquation": "50"
+        }
+      ]
+    },
+    {
+      "atomType": "Extrude",
+      "x": 0.21907552083333334,
+      "y": 0.6982408660351827,
+      "uniqueID": "id-62464",
+      "ioValues": [
+        {
+          "name": "geometry",
+          "ioValue": "__GEOMETRY_INPUT__"
+        },
+        {
+          "name": "height",
+          "ioValue": 50,
+          "currentEquation": "50"
+        }
+      ]
+    },
+    {
+      "atomType": "GitHubMolecule",
+      "x": 0.27897135416666663,
+      "y": 0.8470906630581867,
+      "uniqueID": "id-62473",
+      "name": "util.SelectFace",
+      "ioValues": [
+        {
+          "name": "shape",
+          "ioValue": "__GEOMETRY_INPUT__"
+        },
+        {
+          "name": "index",
+          "ioValue": 0
+        }
+      ],
+      "topLevel": false,
+      "allAtoms": [
+        {
+          "atomType": "Output",
+          "x": 0.98,
+          "y": 0.5,
+          "uniqueID": "id-62469",
+          "ioValues": [
+            {
+              "name": "number or geometry",
+              "ioValue": "__GEOMETRY_INPUT__"
+            }
+          ]
+        },
+        {
+          "atomType": "Input",
+          "x": 0.025384615384615384,
+          "y": 0.15384615384615385,
+          "uniqueID": "id-62470",
+          "name": "shape",
+          "type": "geometry"
+        },
+        {
+          "atomType": "Input",
+          "x": 0.025384615384615384,
+          "y": 0.24615384615384617,
+          "uniqueID": "id-62471",
+          "name": "index"
+        },
+        {
+          "atomType": "Code",
+          "x": 0.38183593749999994,
+          "y": 0.48750000000000004,
+          "uniqueID": "id-62472",
+          "ioValues": [
+            {
+              "name": "shape",
+              "ioValue": "__GEOMETRY_INPUT__"
+            },
+            {
+              "name": "faceIndex",
+              "ioValue": 0
+            }
+          ],
+          "interpreterVersion": 1,
+          "code": "\nfunction run(\n  shape: Assembly,\n  faceIndex: number = 0\n) {\n  let result = undefined;\n  shape.onLeafs((leaf) => {\n    if (leaf.is3D()) {\n      const f = leaf.geometry.faces\n      if (f.length > faceIndex && result == undefined) {\n        result = f[faceIndex]\n      } else {\n        faceIndex = faceIndex - f.length\n      }\n      return leaf;\n    }\n  })\n  return result;\n}\n",
+          "compiledCode": "\"use strict\";\nfunction run(shape, faceIndex = 0) {\n    let result = undefined;\n    shape.onLeafs((leaf) => {\n        if (leaf.is3D()) {\n            const f = leaf.geometry.faces;\n            if (f.length > faceIndex && result == undefined) {\n                result = f[faceIndex];\n            }\n            else {\n                faceIndex = faceIndex - f.length;\n            }\n            return leaf;\n        }\n    });\n    return result;\n}\n"
+        }
+      ],
+      "allConnectors": [
+        {
+          "ap2Name": "shape",
+          "ap1ID": "id-62470",
+          "ap2ID": "id-62472"
+        },
+        {
+          "ap2Name": "faceIndex",
+          "ap1ID": "id-62471",
+          "ap2ID": "id-62472"
+        },
+        {
+          "ap2Name": "number or geometry",
+          "ap1ID": "id-62472",
+          "ap2ID": "id-62469"
+        }
+      ],
+      "parentRepo": {
+        "lastFoundGit": "2026-07-15T18:23:39.014Z",
+        "privateRepo": false,
+        "repoName": "util.SelectFace",
+        "dateCreated": "2026-06-11T23:43:58Z",
+        "likes": 0,
+        "readMe": "https://raw.githubusercontent.com/tristan-huber/util.SelectFace/master/README.md?sanitize=true",
+        "yyyy": 2026,
+        "topMoleculeID": "id-1",
+        "githubMoleculesUsed": [],
+        "html_url": "https://github.com/tristan-huber/util.SelectFace",
+        "topics": [
+          "abundance-tool"
+        ],
+        "parentRepo": null,
+        "forks": 0,
+        "dateModified": "739799",
+        "ranking": 5.7,
+        "searchField": "util.selectface tristan-huber gets a face by index from an assembly abundance-tool",
+        "owner": "tristan-huber",
+        "description": "Gets a face by index from an assembly",
+        "contentURL": "https://raw.githubusercontent.com/tristan-huber/util.SelectFace/master/project.abundance?sanitize=true",
+        "svgURL": "https://raw.githubusercontent.com/tristan-huber/util.SelectFace/master/project.svg?sanitize=true",
+        "isLocal": false
+      },
+      "unitsKey": "Unitless",
+      "fileTypeVersion": 1,
+      "lastReloadedFromGithubAt": 1784164880084
+    },
+    {
+      "atomType": "Move",
+      "x": 0.349609375,
+      "y": 0.8200270635994586,
+      "uniqueID": "id-62486",
+      "ioValues": [
+        {
+          "name": "geometry",
+          "ioValue": "__GEOMETRY_INPUT__"
+        },
+        {
+          "name": "xDist",
+          "ioValue": 10,
+          "currentEquation": "10"
+        },
+        {
+          "name": "yDist",
+          "ioValue": -28,
+          "currentEquation": "-28"
+        },
+        {
+          "name": "zDist",
+          "ioValue": -20,
+          "currentEquation": "-20"
+        }
+      ]
+    }
+  ],
+  "allConnectors": [
+    {
+      "ap2Name": "geometry",
+      "ap1ID": "id-62442",
+      "ap2ID": "id-62446"
+    },
+    {
+      "ap2Name": "geometry",
+      "ap1ID": "id-62446",
+      "ap2ID": "id-62450"
+    },
+    {
+      "ap2Name": "Shape 2",
+      "ap1ID": "id-62446",
+      "ap2ID": "id-62456"
+    },
+    {
+      "ap2Name": "Shape 1",
+      "ap1ID": "id-62450",
+      "ap2ID": "id-62456"
+    },
+    {
+      "ap2Name": "geometry",
+      "ap1ID": "id-62461",
+      "ap2ID": "id-62464"
+    },
+    {
+      "ap2Name": "shape",
+      "ap1ID": "id-62464",
+      "ap2ID": "id-62473"
+    },
+    {
+      "ap2Name": "geometry",
+      "ap1ID": "id-62473",
+      "ap2ID": "id-62486"
+    }
+  ],
+  "unitsKey": "Unitless",
+  "fileTypeVersion": 1,
+  "filetypeVersion": 1
 }
